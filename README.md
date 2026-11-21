@@ -20,8 +20,10 @@ after NMI    $02 = E1D0  (−7728)   (NMI's own scratch value)
 
 This was captured with a debug ROM in snes9x: Chulainn (Holyn), HP growth 90 % + minor Od +20 % (should be 110 %, a guaranteed +1). HP did not grow.
 
-- In the map battle we tested (chapter 4, Sigurd attacking an adjacent pirate, 200 level-ups), the level-up is calculated right after the attack is confirmed, still on the map screen. It starts around scanline 20–50 and finishes by scanline 214, before that frame's NMI at line 225. None of the 200 level-ups were hit, and the original and fixed ROMs gave identical results. Other maps, enemy-phase counterattacks and staff level-ups haven't been tested.
-- In the arena, the main thread gets little CPU time. A level-up takes about 3 frames, so any of the 8 growth calculations can be interrupted.
+**Why only the arena:** the problem isn't the arena as such, but how it calculates battles. The arena calculates each round only when that round starts, so the last round, and the level-up with it, is calculated while the battle animation is playing and the NMI is running its heavy path that writes `$00–$03`. Map battles calculate the whole battle up front when the attack is confirmed, so the level-up never meets that heavy path, even with Real animations or a multi-round Charge battle.
+
+- On map battles, the whole battle (counterattacks, follow-ups, brave-weapon double hits and Charge rounds included) is calculated 3–7 frames after the attack is confirmed, before the battle screen appears, with either the Map or Real animation setting. NMIs that land during this calculation take the short path that doesn't touch `$00–$03`. Tested: Sigurd vs. a pirate (200 level-ups, Map setting), Ayra vs. a pirate with three different swords (300 level-ups each with the Map and Real settings), and Noish, who has Charge, vs. a pirate with four weapons (379 level-ups each with the Map and Real settings, including multi-round Charge battles that ended with the pirate defeated; the longer the battle, the later the level-up, but still by frame 7). None of the 1,558 level-ups were hit, and the original and fixed ROMs gave identical results. The arena differs because its level-up is calculated mid-animation. Other maps, the Individual setting, enemy-phase counterattacks and staff level-ups haven't been tested.
+- In the arena, the level-up is calculated mid-animation. The NMI then takes about 190 of the 262 scanlines in each frame, so the calculation stretches over 2–3 frames and any of the 8 growth calculations can be interrupted.
 - **Every character is affected**, with or without holy blood: `$84:A649` always clears `$02`, runs the loop and returns `$02`.
 - The bug is in the original Japanese ROM. Translations that keep this code have it too.
 
@@ -87,7 +89,7 @@ python3 fe4_growth_race_fix.py input.sfc output.sfc
 
 - Only the holy-blood growth bonus during level-up is fixed. `$84:A5C0` has 4 other callers (`$80:BCB4`, `$84:A0BA`, `$84:F695`, `$89:90C2`; status screen, battle stats, etc.). In theory, they could race with NMI as well. This hasn't been observed and isn't fixed.
 - Other routines that use `$00–$0F` across frames may have the same kind of problem. Only the level-up path was checked.
-- The statistics come from one character (Chulainn), one save and one low-win-rate arena match. Rates for other characters and other arenas weren't measured; map battles were tested in one scene only.
+- The statistics come from one character (Chulainn), one save and one low-win-rate arena match. Rates for other characters and other arenas weren't measured; map battles were tested in three scenes with both animation settings.
 - **Not tested on real SNES hardware.** Tested in snes9x (core), SuperZSNES and a custom 65816 emulator. The Japanese IPS was checked to boot to the title screen in snes9x. The Chinese version, combined with other personal patches, was replayed through all 161 fights and played for several turns in SuperZSNES.
 - Not tested with the English fan translation. The script checks the bytes before patching, so it will refuse rather than damage an incompatible ROM. Reports are welcome.
 
