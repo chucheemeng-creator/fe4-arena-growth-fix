@@ -20,7 +20,7 @@ after NMI    $02 = E1D0  (−7728)   (NMI's own scratch value)
 
 This was captured with a debug ROM in snes9x: Chulainn (Holyn), HP growth 90 % + minor Od +20 % (should be 110 %, a guaranteed +1). HP did not grow.
 
-- On map battles, the level-up usually finishes within one frame, so the collision is rare.
+- In the map battle we tested (chapter 4, Sigurd attacking an adjacent pirate, 200 level-ups), the level-up is calculated right after the attack is confirmed, still on the map screen. It starts around scanline 20–50 and finishes by scanline 214, before that frame's NMI at line 225. None of the 200 level-ups were hit, and the original and fixed ROMs gave identical results. Other maps, enemy-phase counterattacks and staff level-ups haven't been tested.
 - In the arena, the main thread gets little CPU time. A level-up takes about 3 frames, so any of the 8 growth calculations can be interrupted.
 - **Every character is affected**, with or without holy blood: `$84:A649` always clears `$02`, runs the loop and returns `$02`.
 - The bug is in the original Japanese ROM. Translations that keep this code have it too.
@@ -87,7 +87,7 @@ python3 fe4_growth_race_fix.py input.sfc output.sfc
 
 - Only the holy-blood growth bonus during level-up is fixed. `$84:A5C0` has 4 other callers (`$80:BCB4`, `$84:A0BA`, `$84:F695`, `$89:90C2`; status screen, battle stats, etc.). In theory, they could race with NMI as well. This hasn't been observed and isn't fixed.
 - Other routines that use `$00–$0F` across frames may have the same kind of problem. Only the level-up path was checked.
-- The statistics come from one character (Chulainn), one save and one low-win-rate arena match. Rates for other characters, other arenas and map battles weren't measured.
+- The statistics come from one character (Chulainn), one save and one low-win-rate arena match. Rates for other characters and other arenas weren't measured; map battles were tested in one scene only.
 - **Not tested on real SNES hardware.** Tested in snes9x (core), SuperZSNES and a custom 65816 emulator. The Japanese IPS was checked to boot to the title screen in snes9x. The Chinese version, combined with other personal patches, was replayed through all 161 fights and played for several turns in SuperZSNES.
 - Not tested with the English fan translation. The script checks the bytes before patching, so it will refuse rather than damage an incompatible ROM. Reports are welcome.
 
