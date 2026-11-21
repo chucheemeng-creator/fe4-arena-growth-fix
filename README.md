@@ -97,7 +97,7 @@ python3 fe4_growth_race_fix.py input.sfc output.sfc
 |---|---|
 | Arena level-ups grow worse than normal | **True**. Caused by this bug, not a special arena rule. |
 | Even 100 % growths can fail | **True, but rare**. Happens when the bonus is overwritten with a large negative value. Not seen for HP in the 161 test fights. |
-| Press B before the final blow, choose to continue, then finish the fight, to get normal growths | **Unverified**. When you press B, the arena keeper asks whether to continue or quit. Continuing resumes from the interrupted round; only confirming the quit discards the fight. Whether the interruption changes the timing between the level-up and NMI hasn't been tested. |
+| Press B before the final blow, choose to continue, then finish the fight, to get normal growths | **True, if the timing is right**. Pressing B brings up the arena keeper's prompt; choosing Continue resumes the fight. Tested on the same 161 fights: interrupting just before the final exchange gave results identical to the fixed ROM in all 161 fights. Interrupting about 2.5 s earlier helped only partly (Def 23 %), and about 5 s earlier had no effect at all. Why the first exchange after resuming avoids the collision hasn't been traced. |
 
 ## Credits
 
