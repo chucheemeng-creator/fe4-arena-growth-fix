@@ -20,8 +20,8 @@ after NMI    $02 = E1D0  (−7728)   (NMI's own scratch value)
 
 This was captured with a debug ROM in snes9x: Chulainn (Holyn), HP growth 90 % + minor Od +20 % (should be 110 %, a guaranteed +1). HP did not grow.
 
-- On map battles the level-up usually finishes within one frame, so the collision is rare.
-- In the arena the main thread gets little CPU time. A level-up takes about 3 frames, so any of the 8 growth calculations can be interrupted.
+- On map battles, the level-up usually finishes within one frame, so the collision is rare.
+- In the arena, the main thread gets little CPU time. A level-up takes about 3 frames, so any of the 8 growth calculations can be interrupted.
 - **Every character is affected**, with or without holy blood: `$84:A649` always clears `$02`, runs the loop and returns `$02`.
 - The bug is in the original Japanese ROM. Translations that keep this code have it too.
 
@@ -47,7 +47,7 @@ With fixed RNG and no NMI, the patched routine gives results identical to the or
 
 ## The fix
 
-`$84:A649` now runs with a private direct page. On entry it reserves 16 bytes on the stack and sets D = S+1. On exit it restores D and the stack.
+`$84:A649` now runs with a private direct page. On entry, it reserves 16 bytes on the stack and sets D = S+1. On exit, it restores D and the stack.
 
 - NMI writes to `$0000–$0003` (with D = 0) no longer hit the level-up's scratch.
 - NMI pushes go below S, so they cannot reach the reserved bytes either.
@@ -85,7 +85,7 @@ python3 fe4_growth_race_fix.py input.sfc output.sfc
 
 ## Scope and limitations
 
-- Only the holy-blood growth bonus during level-up is fixed. `$84:A5C0` has 4 other callers (`$80:BCB4`, `$84:A0BA`, `$84:F695`, `$89:90C2`; status screen, battle stats, etc.). In theory they could race with NMI as well. This hasn't been observed and isn't fixed.
+- Only the holy-blood growth bonus during level-up is fixed. `$84:A5C0` has 4 other callers (`$80:BCB4`, `$84:A0BA`, `$84:F695`, `$89:90C2`; status screen, battle stats, etc.). In theory, they could race with NMI as well. This hasn't been observed and isn't fixed.
 - Other routines that use `$00–$0F` across frames may have the same kind of problem. Only the level-up path was checked.
 - The statistics come from one character (Chulainn), one save and one low-win-rate arena match. Rates for other characters, other arenas and map battles weren't measured.
 - **Not tested on real SNES hardware.** Tested in snes9x (core), SuperZSNES and a custom 65816 emulator. The Japanese IPS was checked to boot to the title screen in snes9x. The Chinese version, combined with other personal patches, was replayed through all 161 fights and played for several turns in SuperZSNES.
@@ -97,7 +97,7 @@ python3 fe4_growth_race_fix.py input.sfc output.sfc
 |---|---|
 | Arena level-ups grow worse than normal | **True**. Caused by this bug, not a special arena rule. |
 | Even 100 % growths can fail | **True, but rare**. Happens when the bonus is overwritten with a large negative value. Not seen for HP in the 161 test fights. |
-| Cancel just before the final blow, then finish the fight, to get normal growths | **False**. Cancelling before the result discards the fight and replays it with new random numbers. It doesn't change the odds. |
+| Press B before the final blow, choose to continue, then finish the fight, to get normal growths | **Unverified**. When you press B, the arena keeper asks whether to continue or quit. Continuing resumes from the interrupted round; only confirming the quit discards the fight. Whether the interruption changes the timing between the level-up and NMI hasn't been tested. |
 
 ## Credits
 
