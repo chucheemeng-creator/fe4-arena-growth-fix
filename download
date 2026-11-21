@@ -1,0 +1,11 @@
+# Never commit ROMs, saves or save states
+*.sfc
+*.smc
+*.fig
+*.swc
+*.srm
+*.st
+*.state
+*.zst*
+*.zip
+__pycache__/

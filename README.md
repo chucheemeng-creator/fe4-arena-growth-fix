@@ -1,2 +1,105 @@
-# fe4-arena-growth-fix
-Fixes the FE4 (Genealogy of the Holy War) arena growth bug: an NMI / direct page race in the level-up code. 修正聖戰系譜鬥技場升級成長偏低的錯誤。
+# FE4 Arena Growth Fix — NMI / Direct Page race in level-up
+
+**English** | [中文](README.zh-TW.md)
+
+A bug fix for *Fire Emblem: Genealogy of the Holy War* (ファイアーエムブレム 聖戦の系譜, SFC 1996).
+
+Players have long said that **levelling up in the arena gives worse stat growths**. It's true, and it's a bug. The cause is a race condition between the level-up code and the NMI (vblank) handler. This patch fixes it.
+
+## The bug
+
+During a level-up, the holy-blood growth bonus routine `$84:A649` loops over the 13 bloodlines and keeps its running total in direct page `$02`. Its helper `$84:A5C0` uses `$00`.
+
+The NMI handler (entry `$80:81B6`) sets D = 0 and also uses `$00–$03` as scratch. It does not always restore them. If an NMI lands while `$84:A649` is running, the half-finished total is overwritten:
+
+```
+before NMI   $02 = 0000            (correct partial sum)
+after NMI    $02 = E1D0  (−7728)   (NMI's own scratch value)
++ Odo +20    $02 = E1E4  (−7708)   → growth rate clamped to 0 %, the stat does not grow
+```
+
+This was captured with a debug ROM in snes9x: Holyn, HP growth 90 % + minor Odo +20 % (should be 110 %, a guaranteed +1). HP did not grow.
+
+- On map battles the level-up usually finishes within one frame, so the collision is rare.
+- In the arena the main thread gets little CPU time. A level-up takes about 3 frames, so any of the 8 growth calculations can be interrupted.
+- **Every character is affected**, with or without holy blood: `$84:A649` always clears `$02`, runs the loop and returns `$02`.
+- The bug is in the original Japanese ROM. Translations that keep this code have it too.
+
+## Results
+
+161 winning arena fights (Holyn, chapter 2), replayed frame-for-frame in snes9x. Only the level-up differs between columns. The baseline is 2,000 runs of the level-up routine on the same memory state, without NMI.
+
+| Stat | Original | Fixed | Baseline |
+|---|---|---|---|
+| HP | 100% | 100% | 100% |
+| Str | 31% | 34% | 32% |
+| Mag | 3% | 6% | 6% |
+| Skl | 72% | 80% | 80% |
+| Spd | 26% | 27% | 31% |
+| Def | **11%** | 30% | 31% |
+| Res | 4% | 5% | 5% |
+| Luck | 16% | 16% | 21% |
+| Stats gained per level | 2.63 | 2.98 | 3.05 |
+
+In the original, Defence is about 5.4 standard errors below baseline, far beyond normal sampling noise. Skill is about 2.4 SE below, pointing the same way. After the fix, all stats return to near the baseline. Strength is slightly above it (34 % vs 32 %), but there is no systematic increase. That points to the original calculation being restored, not growths simply being raised.
+
+With fixed RNG and no NMI, the patched routine gives results identical to the original: 500 runs on the Chinese ROM, 300 on the Japanese ROM.
+
+## The fix
+
+`$84:A649` now runs with a private direct page. On entry it reserves 16 bytes on the stack and sets D = S+1. On exit it restores D and the stack.
+
+- NMI writes to `$0000–$0003` (with D = 0) no longer hit the level-up's scratch.
+- NMI pushes go below S, so they cannot reach the reserved bytes either.
+
+| SNES address | File offset (headerless) | Original | Patched |
+|---|---|---|---|
+| `$84:A649` | `0x04A649` | `8B 08 4B AB` | `5C A0 FF 86` (JML entry stub) |
+| `$84:A69A` | `0x04A69A` | `7A FA 28 AB` | `5C B7 FF 86` (JML exit stub) |
+| `$86:FFA0–FFC5` | `0x06FFA0` | all `00` (unused) | 38-byte stubs |
+| header checksum | `0x00FFDC` | — | recalculated |
+
+The full commented source of the stubs is in [`fe4_growth_race_fix.py`](fe4_growth_race_fix.py).
+
+## How to apply
+
+**You need your own ROM. This repository does not contain any ROM data.**
+
+| ROM | Identify | Use |
+|---|---|---|
+| Japanese original | 4 MB HiROM, title `FIREEMBLEM4`, headerless CRC32 `DC0D8CF9` | `fe4_growth_race_fix_jp.ips` with any IPS patcher → CRC32 `CE39F90C` |
+| Chinese translation (火花天龍劍 V1.1) | `0052.SMC`, 512-byte header, headerless CRC32 `C16D614E` | `fe4_growth_race_fix.py` |
+| Other versions, or ROMs with other patches | — | `fe4_growth_race_fix.py` |
+
+```
+python3 fe4_growth_race_fix.py input.sfc output.sfc
+```
+
+- Needs Python 3. No other packages.
+- `.smc` files with a 512-byte copier header are handled automatically.
+- Before writing, the script checks the original bytes at both sites and that `$86:FFA0` is free. If anything doesn't match, it stops without changing the file.
+- Save format is unchanged. Existing saves work.
+- If you combine this with other patches, make sure they don't use `$86:FFA0–FFC5` or modify `$84:A649` / `$84:A69A`.
+
+`make_ips.py` builds an IPS from an original and a patched ROM: `python3 make_ips.py original.sfc patched.sfc out.ips`.
+
+## Scope and limitations
+
+- Only the holy-blood growth bonus during level-up is fixed. `$84:A5C0` has 4 other callers (`$80:BCB4`, `$84:A0BA`, `$84:F695`, `$89:90C2`; status screen, battle stats, etc.). In theory they could race with NMI as well. This hasn't been observed and isn't fixed.
+- Other routines that use `$00–$0F` across frames may have the same kind of problem. Only the level-up path was checked.
+- The statistics come from one character (Holyn), one save and one low-win-rate arena match. Rates for other characters, other arenas and map battles weren't measured.
+- **Not tested on real SNES hardware.** Tested in snes9x (core), SuperZSNES and a custom 65816 emulator. The Japanese IPS was checked to boot to the title screen in snes9x. The Chinese version, combined with other personal patches, was replayed through all 161 fights and played for several turns in SuperZSNES.
+- Not tested with the English fan translation. The script checks the bytes before patching, so it will refuse rather than damage an incompatible ROM. Reports are welcome.
+
+## Myths, checked
+
+| Claim | Verdict |
+|---|---|
+| Arena level-ups grow worse than normal | **True**. Caused by this bug, not a special arena rule. |
+| Even 100 % growths can fail | **True, but rare**. Happens when the bonus is overwritten with a large negative value. Not seen for HP in the 161 test fights. |
+| Cancel just before the final blow, then finish the fight, to get normal growths | **False**. Cancelling before the result discards the fight and replays it with new random numbers. It doesn't change the odds. |
+
+## License
+
+The patch code and documentation in this repository are released under the [MIT License](LICENSE).
+*Fire Emblem: Genealogy of the Holy War* is © Nintendo / Intelligent Systems. This repository contains no ROM data. Please don't open issues asking for ROMs.
